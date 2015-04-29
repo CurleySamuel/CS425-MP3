@@ -8,7 +8,6 @@ import time
 
 N = 9
 n = int(math.sqrt(N))
-debug = False
 assert math.sqrt(N)**2 == N, "N must be a square number"
 assert len(sys.argv) == 5, "Require {} arguments to function, given {}".format(4,len(sys.argv)-1)
 try:
@@ -34,18 +33,15 @@ def main():
     for x in range(1,N+1):
         a = []
         a.append(Queue.Queue())
-        a.append(None)
+        a.append([None,None])
         a.append(threading.Thread(target=main_thread_function, args=(x,)))
         threads.append(a)
 
     # Start threads
-    print colored("Executing for {} seconds", "red").format(tot_exec_time)
     for x in range(1,N+1):
         threads[x][2].daemon = True
         threads[x][2].start()
-
     time.sleep(tot_exec_time)
-    print colored("Total execution time reached. Shutting down.", "red")
 
 
 
@@ -70,14 +66,16 @@ def handle_messages(thread_id, request=False, release=False, critical=False):
         msg = busy_get(thread_id, end_time)
         if msg is None:
             return
+        if option:
+            print "{} {} {} {}".format(int(round(time.time() * 1000)), thread_id, msg['src'], msg['action'])
         if msg['action'] == "grant":
             granted.append(msg['src'])
-            if len(granted) == 2*n - 1:
+            if len(granted) == 2*n - 2:
                 print "{} {} {}".format(int(round(time.time() * 1000)), thread_id, ' '.join(map(str, granted)))
                 return
 
         elif msg['action'] == "request":
-            if threads[thread_id][1] is None:
+            if threads[thread_id][1][0] is None:
                 send_yes_vote(thread_id, msg)
             else:
                 if threads[thread_id][1][1] < msg['tstamp']:
@@ -86,7 +84,7 @@ def handle_messages(thread_id, request=False, release=False, critical=False):
                     send_no_vote(thread_id, msg)
 
         elif msg['action'] == "release":
-            threads[thread_id][1] = None
+            threads[thread_id][1][0] = None
 
         elif msg['action'] == "deny":
             pass
@@ -105,8 +103,8 @@ def handle_messages(thread_id, request=False, release=False, critical=False):
 
 
 def send_yes_vote(thread_id, msg):
-    if debug: print colored("\t{} -> {} YES", "cyan").format(thread_id, msg['src'])
-    threads[thread_id][1] = [ msg['src'], msg['tstamp'] ]
+    threads[thread_id][1][0] = msg['src']
+    threads[thread_id][1][1] = msg['tstamp']
     send_msg = {
         "action": "grant",
         "src": thread_id,
@@ -116,7 +114,7 @@ def send_yes_vote(thread_id, msg):
 
 
 def send_no_vote(thread_id, msg):
-    if debug: print colored("\t{} -> {} NO", "cyan").format(thread_id, msg['src'])
+    threads[thread_id][0].put(msg)
     send_msg = {
         "action": "deny",
         "src": thread_id,
@@ -126,7 +124,6 @@ def send_no_vote(thread_id, msg):
 
 
 def get_back_vote(thread_id, thread, tstamp):
-    if debug: print colored("\t{} -> {} INQUIRE about {}", "cyan").format(thread_id, threads[thread_id][1][0], thread)
     send_msg = {
         "action": "inquire",
         "src": thread_id,
@@ -137,7 +134,6 @@ def get_back_vote(thread_id, thread, tstamp):
 
 
 def send_yield(thread_id, msg):
-    if debug: print colored("\t{} -> {} YIELD to {}", "cyan").format(thread_id, msg['src'], msg['alternative'])
     send_msg = {
         "action": "yield",
         "src": thread_id,
@@ -148,7 +144,6 @@ def send_yield(thread_id, msg):
 
 
 def send_no_yield(thread_id, msg):
-    if debug: print colored("\t{} -> {} NO_YIELD to {}", "cyan").format(thread_id, msg['src'], msg['alternative'])
     send_msg = {
         "action": "no_yield",
         "src": thread_id,
@@ -194,18 +189,18 @@ def release_critical(thread_id):
         while 1:
             voting_set_member = gen.next()
             threads[voting_set_member][0].put(msg)
-            if debug: print colored("\t{} -> {} RELEASE", "cyan").format(thread_id, voting_set_member)
     except StopIteration:
         pass
 
 
 def voting_set(me):
-    for x in range(1,N):
+    for x in range(1,N+1):
         if x % n == me % n and x != me:
             yield x
     me = me - 1
     for x in range((me/n)*n + 1, (me/n)*n + n + 1):
-        yield x
+        if x != me+1:
+            yield x
 
 
 if __name__ == "__main__":
