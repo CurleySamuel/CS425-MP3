@@ -8,6 +8,7 @@ import time
 
 N = 9
 n = int(math.sqrt(N))
+debug = False
 assert math.sqrt(N)**2 == N, "N must be a square number"
 assert len(sys.argv) == 5, "Require {} arguments to function, given {}".format(4,len(sys.argv)-1)
 try:
@@ -44,7 +45,7 @@ def main():
         threads[x][2].start()
 
     time.sleep(tot_exec_time)
-    print colored("Total execution time reached. Shutting down.", "green")
+    print colored("Total execution time reached. Shutting down.", "red")
 
 
 
@@ -57,76 +58,54 @@ def main_thread_function(thread_id):
 
 
 def handle_messages(thread_id, request=False, release=False, critical=False):
-    if request:
-        grants = []
-        while 1:
-            last_yield = None
-            if len(grants) == (2*n - 1):
-                break
-            msg = threads[thread_id][0].get()
-            if msg['action'] == "grant":
-                grants.append(msg['src'])
-                if thread_id == 3:
-                    print grants
-            elif msg['action'] == "inquire":
-                if len(grants) < (2*n - 2):
-                    if last_yield is None or msg['tstamp'] < last_yield:
-                        send_yield(thread_id, msg['src'], msg['to'], msg['tstamp'])
-                        last_yield = msg['tstamp']
-                else:
-                    send_no_yield(thread_id, msg['src'], msg['to'])
-            elif msg['action'] == "yield":
-                msg['src'] = msg['to']
-                send_yes_vote(thread_id, msg)
-            else:
-                handle_messages_generic(thread_id, msg)
-
-        # We now have the critical section!
-        print colored("{} Has Critical Section", "green").format(thread_id)
-        return handle_messages(thread_id, critical=True)
-
     if release:
         end_time = time.time() + (next_req / 1000.0)
-        while 1:
-            msg = busy_get(thread_id, end_time)
-            if msg is None:
-                break
-            elif msg['action'] == "yield":
-                msg['src'] = msg['to']
-                send_yes_vote(thread_id, msg)
-            elif msg['action'] == "no_yield":
-                msg['src'] = msg['to']
-                send_no_vote(thread_id, msg)
-            else:
-                handle_messages_generic(thread_id, msg)
-
-    if critical:
+    elif critical:
         end_time = time.time() + (cs_int / 1000.0)
-        while 1:
-            msg = busy_get(thread_id, end_time)
-            if msg is None:
-                break
+    else:
+        end_time = time.time() + tot_exec_time
+
+    granted = []
+    while 1:
+        msg = busy_get(thread_id, end_time)
+        if msg is None:
+            return
+        if msg['action'] == "grant":
+            granted.append(msg['src'])
+            if len(granted) == 2*n - 1:
+                print "{} {} {}".format(int(round(time.time() * 1000)), thread_id, ' '.join(map(str, granted)))
+                return
+
+        elif msg['action'] == "request":
+            if threads[thread_id][1] is None:
+                send_yes_vote(thread_id, msg)
             else:
-                handle_messages_generic(thread_id, msg)
+                if threads[thread_id][1][1] < msg['tstamp']:
+                    get_back_vote(thread_id, msg['src'], msg['tstamp'])
+                else:
+                    send_no_vote(thread_id, msg)
 
-
-def handle_messages_generic(thread_id, msg):
-    if msg['action'] == "request":
-        if threads[thread_id][1] is None:
-            send_yes_vote(thread_id, msg)
-        elif threads[thread_id][1][1] > msg['tstamp']:
-            get_back_vote(thread_id, threads[thread_id][1][0], msg['src'], msg['tstamp'])
-        else:
-            threads[thread_id][0].put(msg)
-    elif msg['action'] == "release":
-        if threads[thread_id][1] is not None and threads[thread_id][1][0] == msg['src']:
+        elif msg['action'] == "release":
             threads[thread_id][1] = None
-    elif msg['action'] == "inquire":
-        send_no_yield(thread_id, msg['src'], msg['to'])
+
+        elif msg['action'] == "deny":
+            pass
+
+        elif msg['action'] == "inquire":
+            send_yield(thread_id, msg)
+
+        elif msg['action'] == "yield":
+            msg['src'] = msg['alternative']
+            send_yes_vote(thread_id, msg)
+
+        elif msg['action'] == "no_yield":
+            msg['src'] = msg['alternative']
+            send_no_vote(thread_id, msg)
+
 
 
 def send_yes_vote(thread_id, msg):
-    print colored("\t{} -> {} YES", "cyan").format(thread_id, msg['src'])
+    if debug: print colored("\t{} -> {} YES", "cyan").format(thread_id, msg['src'])
     threads[thread_id][1] = [ msg['src'], msg['tstamp'] ]
     send_msg = {
         "action": "grant",
@@ -137,7 +116,7 @@ def send_yes_vote(thread_id, msg):
 
 
 def send_no_vote(thread_id, msg):
-    print colored("\t{} -> {} NO", "cyan").format(thread_id, msg['src'])
+    if debug: print colored("\t{} -> {} NO", "cyan").format(thread_id, msg['src'])
     send_msg = {
         "action": "deny",
         "src": thread_id,
@@ -146,37 +125,37 @@ def send_no_vote(thread_id, msg):
     threads[msg['src']][0].put(send_msg)
 
 
-def get_back_vote(thread_id, thread, to, to_tstamp):
-    print colored("\t{} -> {} INQUIRE about {}", "cyan").format(thread_id, thread, to)
-    msg = {
+def get_back_vote(thread_id, thread, tstamp):
+    if debug: print colored("\t{} -> {} INQUIRE about {}", "cyan").format(thread_id, threads[thread_id][1][0], thread)
+    send_msg = {
         "action": "inquire",
         "src": thread_id,
-        "to": to,
-        "tstamp": to_tstamp
+        "alternative": thread,
+        "tstamp": tstamp
     }
-    threads[thread][0].put(msg)
+    threads[threads[thread_id][1][0]][0].put(send_msg)
 
 
-def send_yield(thread_id, thread, to, to_tstamp):
-    print colored("\t{} -> {} YIELD to {}", "cyan").format(thread_id, thread, to)
-    msg = {
+def send_yield(thread_id, msg):
+    if debug: print colored("\t{} -> {} YIELD to {}", "cyan").format(thread_id, msg['src'], msg['alternative'])
+    send_msg = {
         "action": "yield",
         "src": thread_id,
-        "to": to,
-        "tstamp": to_tstamp
+        "alternative": msg['alternative'],
+        "tstamp": msg['tstamp']
     }
-    threads[thread][0].put(msg)
+    threads[msg['src']][0].put(send_msg)
 
 
-def send_no_yield(thread_id, thread, to):
-    print colored("\t{} -> {} NO_YIELD", "cyan").format(thread_id, thread)
-    msg = {
+def send_no_yield(thread_id, msg):
+    if debug: print colored("\t{} -> {} NO_YIELD to {}", "cyan").format(thread_id, msg['src'], msg['alternative'])
+    send_msg = {
         "action": "no_yield",
         "src": thread_id,
-        "to": to,
-        "tstamp": time.time()
+        "alternative": msg['alternative'],
+        "tstamp": msg['tstamp']
     }
-    threads[thread][0].put(msg)
+    threads[msg['src']][0].put(send_msg)
 
 
 def busy_get(thread_id, end_time):
@@ -211,12 +190,11 @@ def release_critical(thread_id):
         "tstamp": time.time()
     }
     try:
-        print colored("{} Releasing Critical Section", "green").format(thread_id)
         gen = voting_set(thread_id)
         while 1:
             voting_set_member = gen.next()
             threads[voting_set_member][0].put(msg)
-            print colored("\t{} -> {} RELEASE", "cyan").format(thread_id, voting_set_member)
+            if debug: print colored("\t{} -> {} RELEASE", "cyan").format(thread_id, voting_set_member)
     except StopIteration:
         pass
 
