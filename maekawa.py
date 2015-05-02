@@ -2,14 +2,15 @@ import math
 import sys
 import Queue
 import threading
-from termcolor import colored
+# from termcolor import colored
 import time
 
 
 N = 9
 n = int(math.sqrt(N))
-assert math.sqrt(N)**2 == N, "N must be a square number"
-assert len(sys.argv) == 5, "Require {} arguments to function, given {}".format(4,len(sys.argv)-1)
+assert math.sqrt(N) ** 2 == N, "N must be a square number"
+assert len(sys.argv) == 5, "Require {} arguments to function, given {}".format(
+    4, len(sys.argv) - 1)
 try:
     cs_int = int(sys.argv[1])
     next_req = int(sys.argv[2])
@@ -23,26 +24,25 @@ except ValueError:
 def main():
     # Each element of threads is a list with the following indices
     # 0: message queue
-    # 1: list for keeping track of given vote (thread_id and tstamp)
+    # 1: dictionary used to track various variables for each
     # 2: thread object
     global threads
     threads = []
     threads.append(None)
 
     # Initialize threads
-    for x in range(1,N+1):
+    for x in range(1, N + 1):
         a = []
         a.append(Queue.Queue())
-        a.append([None,None])
+        a.append({})
         a.append(threading.Thread(target=main_thread_function, args=(x,)))
         threads.append(a)
 
     # Start threads
-    for x in range(1,N+1):
+    for x in range(1, N + 1):
         threads[x][2].daemon = True
         threads[x][2].start()
     time.sleep(tot_exec_time)
-
 
 
 def main_thread_function(thread_id):
@@ -65,13 +65,18 @@ def handle_messages(thread_id, request=False, release=False, critical=False):
     while 1:
         msg = busy_get(thread_id, end_time)
         if msg is None:
+            print thread_id, "OUT CRITICAL"
             return
         if option:
-            print "{} {} {} {}".format(int(round(time.time() * 1000)), thread_id, msg['src'], msg['action'])
+            print "{} {} {} {}\n".format(int(round(time.time() * 1000)),
+                                         thread_id, msg['src'], msg['action']),
         if msg['action'] == "grant":
             granted.append(msg['src'])
-            if len(granted) == 2*n - 2:
-                print "{} {} {}".format(int(round(time.time() * 1000)), thread_id, ' '.join(map(str, granted)))
+            if len(granted) == 2 * n - 2:
+                # print "{} {} {}\n".format(int(round(time.time() * 1000)),
+                #  thread_id,
+                # ' '.join(map(str, granted))),
+                print thread_id, "IN CRITICAL"
                 return
 
         elif msg['action'] == "request":
@@ -90,6 +95,8 @@ def handle_messages(thread_id, request=False, release=False, critical=False):
             pass
 
         elif msg['action'] == "inquire":
+            # if msg['src'] in granted:
+            #    granted.remove(msg['src'])
             send_yield(thread_id, msg)
 
         elif msg['action'] == "yield":
@@ -99,7 +106,6 @@ def handle_messages(thread_id, request=False, release=False, critical=False):
         elif msg['action'] == "no_yield":
             msg['src'] = msg['alternative']
             send_no_vote(thread_id, msg)
-
 
 
 def send_yes_vote(thread_id, msg):
@@ -194,15 +200,14 @@ def release_critical(thread_id):
 
 
 def voting_set(me):
-    for x in range(1,N+1):
+    for x in range(1, N + 1):
         if x % n == me % n and x != me:
             yield x
     me = me - 1
-    for x in range((me/n)*n + 1, (me/n)*n + n + 1):
-        if x != me+1:
+    for x in range((me / n) * n + 1, (me / n) * n + n + 1):
+        if x != me + 1:
             yield x
 
 
 if __name__ == "__main__":
     sys.exit(main())
-
