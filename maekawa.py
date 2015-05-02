@@ -59,7 +59,7 @@ def main_thread_function(thread_id):
     threads[thread_id][1]['child'].daemon = True
     threads[thread_id][1]['child'].start()
     while 1:
-        r_time = random.random()  # time.time()
+        r_time = time.time()  # r_time = random.random()  #
         # print "{} - Requesting Critical".format(thread_id)
         while 1:
             threads[thread_id][1]['state'] = "Requesting"
@@ -80,7 +80,6 @@ def main_thread_function(thread_id):
 def wait_for_critical(thread_id):
     for x in range(0, 2 * n):
         threads[thread_id][1]['sem'].acquire()
-        print "\t{} - +1!. State: {}. Nodes: {}\n".format(thread_id, threads[thread_id][1]['state'], " ".join([str(x) for x in threads[thread_id][1]['nodes']])),
 
 
 def message_handler_threads(thread_id):
@@ -88,8 +87,8 @@ def message_handler_threads(thread_id):
         time, msg = threads[thread_id][0].get()
         time = copy.copy(time)
         msg = copy.copy(msg)
-        if msg['action'] is not "request" and msg['action'] is not "grant":
-            print "\t{} - Received {} from {}\n".format(thread_id, msg['action'], msg['src']),
+        # if msg['action'] is not "request" and msg['action'] is not "grant":
+        #    print "\t{} - Received {} from {}\n".format(thread_id, msg['action'], msg['src']),
         if msg['action'] is "request":
             if threads[thread_id][1]['vote'] is None:
                 send_grant_message(thread_id, msg)
@@ -107,7 +106,7 @@ def message_handler_threads(thread_id):
         elif msg['action'] is "grant":
             if msg['src'] not in threads[thread_id][1]['nodes']:
                 threads[thread_id][1]['nodes'].append(msg['src'])
-                print "\t{}({}) - Received {} from {}. Votes: {}\n".format(thread_id, msg['tstamp'], msg['action'], msg['src'], " ".join([str(x) for x in threads[thread_id][1]['nodes']])),
+                print "\t{}({:.6f}) - Received {} from {}. Votes: {}\n".format(thread_id, msg['tstamp'], msg['action'], msg['src'], " ".join([str(x) for x in threads[thread_id][1]['nodes']])),
                 threads[thread_id][1]['sem'].release()
         elif msg['action'] is "release":
             threads[thread_id][1]['vote'] = None
@@ -143,7 +142,7 @@ def send_message(dst, msg):
 
 # Reply to src.
 def send_grant_message(thread_id, imsg):
-    print "\t{} sending GRANT to {}\n".format(thread_id, imsg['src']),
+    # print "\t{} sending GRANT to {}\n".format(thread_id, imsg['src']),
     threads[thread_id][1]['vote'] = (imsg['tstamp'], imsg['src'])
     imsg['action'] = 'grant'
     dst = imsg['src']
@@ -153,7 +152,7 @@ def send_grant_message(thread_id, imsg):
 
 # Reply to src with original message.
 def send_failed_message(thread_id, imsg):
-    print "\t{} sending FAILED to {}. State: {}\n".format(thread_id, imsg['src'], threads[thread_id][1]['state']),
+    # print "\t{} sending FAILED to {}. State: {}\n".format(thread_id, imsg['src'], threads[thread_id][1]['state']),
     dst = imsg['src']
     imsg['src'] = thread_id
     imsg['action'] = 'failed'
@@ -162,7 +161,7 @@ def send_failed_message(thread_id, imsg):
 
 # Reply to current voted node with same message, set alternative.
 def send_inquire_message(thread_id, imsg):
-    print "\t{} sending INQUIRE to {}. Alternative: {}\n".format(thread_id, threads[thread_id][1]['vote'][1], imsg['src']),
+    # print "\t{} sending INQUIRE to {}. Alternative: {}\n".format(thread_id, threads[thread_id][1]['vote'][1], imsg['src']),
     imsg['alternative'] = imsg['src']
     imsg['src'] = thread_id
     imsg['action'] = 'inquire'
